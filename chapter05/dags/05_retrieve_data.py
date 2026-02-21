@@ -2,6 +2,7 @@ from urllib import request
 
 import pendulum
 from airflow.sdk import DAG
+from airflow.providers.http.sensors.http import HttpSensor
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.timetables.trigger import CronTriggerTimetable
 
@@ -21,6 +22,21 @@ with DAG(
     max_active_runs=1,
     catchup=True,
 ):
+    check_data = HttpSensor(
+        task_id="check_data",
+        http_conn_id="wikipedia_pageviews",
+        endpoint=(
+            "other/pageviews/"
+            "{{ logical_date.year }}/"
+            "{{ logical_date.year }}-{{ logical_date.month:0>2 }}/"
+            "pageviews-{{ logical_date.year }}{{ logical_date.month:0>2 }}"
+            "{{ logical_date.day:0>2 }}-{{ logical_date.hour:0>2 }}0000.gz"
+        ),
+        response_check=lambda response: response.status_code == 200,
+        poke_interval=60 * 60,
+        timeout=60 * 60 * 6,
+        mode="reschedule",
+    )
     get_data = PythonOperator(
         task_id="get_data",
         python_callable=_get_data,
@@ -32,3 +48,5 @@ with DAG(
             "output_path": "/tmp/wikipageviews-{{ logical_date.format('YYYYMMDDHH') }}.gz",
         },
     )
+
+    check_data >> get_data
