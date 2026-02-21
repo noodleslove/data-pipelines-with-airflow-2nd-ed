@@ -26,7 +26,7 @@ def _fetch_pageviews(pagenames, logical_date):
         for line in f:
             domain_code, page_title, view_counts, _ = line.split(" ")
             if domain_code == "en" and page_title in pagenames:
-                result[page_title] = view_counts
+                result[page_title] = int(view_counts)
 
     with open("/tmp/postgres_query.sql", "w") as f:
         for pagename, pageviewcount in result.items():

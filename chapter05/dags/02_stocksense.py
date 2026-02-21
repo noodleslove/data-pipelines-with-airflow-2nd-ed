@@ -16,12 +16,13 @@ def _get_data(**kwargs):
     output_path = "/tmp/wikipageviews.gz"
     request.urlretrieve(url, output_path)
 
+
 with DAG(
     dag_id="02_stocksense",
     start_date=pendulum.today("UTC").add(hours=-3),
     schedule=CronTriggerTimetable("@hourly", timezone="UTC"),
     max_active_runs=1,
-    catchup=False
+    catchup=False,
 ):
     check_data = HttpSensor(
         task_id="check_data",
@@ -29,7 +30,7 @@ with DAG(
         endpoint=(
             "other/pageviews/{{ logical_date.year }}/"
             "{{ logical_date.year }}-{{ '{:02}'.format(logical_date.month) }}/"
-            "pageviews-{{ logical_date.year }}"                                                                       
+            "pageviews-{{ logical_date.year }}"
             "{{ '{:02}'.format(logical_date.month) }}"
             "{{ '{:02}'.format(logical_date.day) }}-"
             "{{ '{:02}'.format(logical_date.hour) }}0000.gz"
