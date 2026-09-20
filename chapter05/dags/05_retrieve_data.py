@@ -1,9 +1,9 @@
 from urllib import request
 
 import pendulum
-from airflow.sdk import DAG
 from airflow.providers.http.sensors.http import HttpSensor
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG
 from airflow.timetables.trigger import CronTriggerTimetable
 
 
@@ -12,7 +12,14 @@ def _get_data(year, month, day, hour, output_path, **_):
         "https://dumps.wikimedia.org/other/pageviews/"
         f"{year}/{year}-{month:0>2}/pageviews-{year}{month:0>2}{day:0>2}-{hour:0>2}0000.gz"
     )
-    request.urlretrieve(url, output_path)
+    req = request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+
+    with request.urlopen(req) as response:
+        with open(output_path, "wb") as f:
+            f.write(response.read())
 
 
 with DAG(
@@ -28,9 +35,8 @@ with DAG(
         endpoint=(
             "other/pageviews/"
             "{{ logical_date.year }}/"
-            "{{ logical_date.year }}-{{ logical_date.month:0>2 }}/"
-            "pageviews-{{ logical_date.year }}{{ logical_date.month:0>2 }}"
-            "{{ logical_date.day:0>2 }}-{{ logical_date.hour:0>2 }}0000.gz"
+            "{{ logical_date.strftime('%Y-%m') }}/"
+            "pageviews-{{ logical_date.strftime('%Y%m%d-%H') }}0000.gz"
         ),
         response_check=lambda response: response.status_code == 200,
         poke_interval=60 * 60,
