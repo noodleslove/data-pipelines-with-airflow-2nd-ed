@@ -5,10 +5,10 @@
 from urllib import request
 
 import pendulum
-from airflow.sdk import DAG
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.python import PythonOperator
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.sdk import DAG
 from airflow.timetables.trigger import CronTriggerTimetable
 
 
@@ -17,16 +17,19 @@ def _get_data(year, month, day, hour, output_path, **_):
         "https://dumps.wikimedia.org/other/pageviews/"
         f"{year}/{year}-{month:0>2}/pageviews-{year}{month:0>2}{day:0>2}-{hour:0>2}0000.gz"
     )
-    request.urlretrieve(url, output_path)
+    req = request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with request.urlopen(req) as response:
+        with open(output_path, "wb") as f:
+            f.write(response.read())
 
 
 def _fetch_pageviews(pagenames, logical_date):
     result = dict.fromkeys(pagenames, 0)
-    with open(f"/tmp/wikipageviews-{ logical_date.format('YYYYMMDDHH') }") as f:
+    with open(f"/tmp/wikipageviews-{logical_date.format('YYYYMMDDHH')}") as f:
         for line in f:
             domain_code, page_title, view_counts, _ = line.split(" ")
             if domain_code == "en" and page_title in pagenames:
-                result[page_title] = view_counts
+                result[page_title] = int(view_counts)
 
     with open("/tmp/postgres_query.sql", "w") as f:
         for pagename, pageviewcount in result.items():
@@ -40,12 +43,12 @@ def _fetch_pageviews(pagenames, logical_date):
 
 with DAG(
     dag_id="09_postgres_call",
-    start_date=pendulum.now("UTC").add(hours=-4),
-    end_date=pendulum.now("UTC").add(hours=-1),
+    start_date=pendulum.now("UTC").add(hours=-8),
+    end_date=pendulum.now("UTC").add(hours=-5),
     schedule=CronTriggerTimetable("@hourly", timezone="UTC"),
     template_searchpath="/tmp",
     max_active_runs=1,
-    catchup=True
+    catchup=True,
 ):
     get_data = PythonOperator(
         task_id="get_data",
@@ -59,7 +62,10 @@ with DAG(
         },
     )
 
-    extract_gz = BashOperator(task_id="extract_gz", bash_command="gunzip --force /tmp/wikipageviews-{{ logical_date.format('YYYYMMDDHH') }}.gz")
+    extract_gz = BashOperator(
+        task_id="extract_gz",
+        bash_command="gunzip --force /tmp/wikipageviews-{{ logical_date.format('YYYYMMDDHH') }}.gz",
+    )
 
     fetch_pageviews = PythonOperator(
         task_id="fetch_pageviews",
